@@ -97,13 +97,15 @@ h1{font:700 26px Manrope,sans-serif;letter-spacing:-1px;margin-top:8px;color:#25
 .temporal-table-wrap{overflow:auto}
 .temporal-table td{height:44px}
 .temporal-table td strong{color:#48534f}
+.temporal-table .selected-cohort-row{background:#f1edf6}
+.temporal-table .selected-cohort-row td:first-child strong{color:#59427d}
 .temporal-panel .panel-footer{gap:12px;flex-wrap:wrap;line-height:1.5}
 .ks-value{display:flex;flex-direction:column;gap:3px}
 .ks-value small{font-size:8px;color:#9aa3a1}
 .threshold-card>small{font-size:8px;line-height:1.5;color:#98a29f;margin-top:2px}
 .data-note{display:flex;gap:8px;align-items:flex-start;color:#788580;background:#f0f4f2;border:1px solid #e5ebe7;border-radius:6px;padding:9px 11px;margin:-2px 0 13px;font-size:9px;line-height:1.5}
 .data-note svg{flex:none;color:#84938a}
-.metrics-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin:15px 0}
+.metrics-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:13px;margin:15px 0}
 .metric-card{background:white;border:1px solid #e8edef;border-radius:8px;min-height:117px;padding:14px 15px}
 .metric-top{display:flex;justify-content:space-between;align-items:center;color:#899492;font-size:9px;font-weight:700;letter-spacing:.45px}
 .metric-icon{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:#f1f5f2;color:#638271}

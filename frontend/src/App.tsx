@@ -148,6 +148,12 @@ function App() {
       setRun(latestRun);
       setDataset(datasetStatus);
       setModel(modelStatus);
+      if (typeof latestRun?.source === "string" && latestRun.source.startsWith("lendingclub_")) {
+        const latestCohort = latestRun.source.slice("lendingclub_".length);
+        if (datasetStatus.evaluation_cohorts.includes(latestCohort)) {
+          setSelectedCohort(latestCohort);
+        }
+      }
       setError("");
     } catch (reason) {
       setDatabaseConnected(false);
@@ -205,6 +211,7 @@ function App() {
         cohort,
       });
       setRun(result);
+      setSelectedCohort(cohort);
       setNotificationMessage(summarizeDelivery(result.notification_delivery));
     } catch {
       return;
@@ -281,9 +288,11 @@ function App() {
   const drifted = run?.drifted_feature_count ?? 0;
   const healthy = run !== null && drifted === 0;
   const metadata = model?.metadata ?? null;
-  const latestEvaluationCohort = dataset?.evaluation_cohorts.at(-1);
-  const latestEvaluation = latestEvaluationCohort
-    ? metadata?.metrics_by_cohort[latestEvaluationCohort]
+  const selectedEvaluation = selectedCohort
+    ? metadata?.metrics_by_cohort[selectedCohort]
+    : undefined;
+  const monitoredCohort = run?.source.startsWith("lendingclub_")
+    ? run.source.slice("lendingclub_".length)
     : undefined;
   const quarterlyTrend = dataset?.evaluation_cohorts
     .map((cohort) => ({
@@ -359,7 +368,7 @@ function App() {
 
         <div className="page">
           <section className="page-heading">
-            <div><div className="eyebrow"><span className="eyebrow-dot" /> MODEL MONITORING</div><h1>Good morning, Admin <span className="wave">✳</span></h1><p>Here’s the latest health check for your credit risk model.</p></div>
+            <div><div className="eyebrow"><span className="eyebrow-dot" /> MODEL MONITORING</div><h1>Good morning, Admin <span className="wave">✳</span></h1><p>Select a quarter to update its performance metrics. Click Monitor cohort to run drift checks for that quarter.</p></div>
             <div className="heading-actions">
               <button className="button button-outline" onClick={() => void refresh()}><RefreshCw size={15} /> Refresh</button>
               {!model?.trained
@@ -369,13 +378,13 @@ function App() {
           </section>
 
           {error && <div className="error-banner"><TriangleAlert size={17} /><span>{error} Start the API and PostgreSQL with <code>docker compose up --build</code>.</span></div>}
-          {notificationMessage && <div className="notification-banner" role="status">{notificationMessage}{notificationMessage.includes("not_configured") && <> Set channel credentials in the local <code>.env</code> file and restart the API.</>}</div>}
+          {notificationMessage && <div className="notification-banner" role="status">{notificationMessage}{notificationMessage.includes("not_configured") && <> Set Gmail credentials in the local <code>.env</code> file and restart the API.</>}</div>}
 
           <div className="monitoring-results-row">
             <section className="status-banner primary-status" aria-label="LendingClub monitoring result">
               <div className={`status-icon ${!run ? "status-neutral" : healthy ? "status-good" : "status-warn"}`}>{!run ? <Clock3 size={20} /> : healthy ? <ShieldCheck size={21} /> : <TriangleAlert size={20} />}</div>
               <div className="status-copy"><strong>{!run ? "Ready for cohort monitoring" : healthy ? "No significant feature drift detected" : "Feature drift detected"}</strong><span>{!run ? dataset?.available ? "Train on resolved 36-month loans from 2007–2013, then compare eight matured quarterly cohorts from 2014-Q1 to 2015-Q4." : "Place accepted_2007_to_2018Q4.csv in the project data folder." : healthy ? `No monitored features crossed the drift threshold. ${runContext}` : `${drifted} of ${run.feature_count} features crossed the monitoring threshold. ${runContext}`}</span></div>
-              <div className="status-updated"><span>LENDINGCLUB CHECK</span><strong>{lastChecked}</strong></div>
+              <div className="status-updated"><span>MONITORED COHORT</span><strong>{monitoredCohort ?? "No run yet"}</strong>{monitoredCohort && <span>{lastChecked}</span>}</div>
               <a className="status-more" href="#features" aria-label="View LendingClub drift results"><ChevronDown size={17} /></a>
             </section>
           </div>
@@ -385,17 +394,18 @@ function App() {
             <div className="dataset-stats">
               <div><span>TRAINING YEARS</span><strong>{metadata?.training_period ?? (dataset ? `2007–${dataset.train_end_year}` : "—")}</strong></div>
               <div><span>RESOLVED TRAINING LOANS</span><strong>{metadata ? metadata.training_rows.toLocaleString() : "—"}</strong></div>
-              <div><span>{latestEvaluationCohort ?? "OUT-OF-TIME"} AUC</span><strong>{latestEvaluation?.metrics_available ? latestEvaluation.roc_auc.toFixed(3) : "—"}</strong></div>
-              <div><span>{latestEvaluationCohort ?? "LATEST"} DEFAULT RATE</span><strong>{latestEvaluation?.rows ? `${(latestEvaluation.defaults / latestEvaluation.rows * 100).toFixed(1)}%` : "—"}</strong></div>
+              <div><span>{selectedCohort || "SELECTED"} AUC</span><strong>{selectedEvaluation?.metrics_available ? selectedEvaluation.roc_auc.toFixed(3) : "—"}</strong></div>
+              <div><span>{selectedCohort || "SELECTED"} DEFAULT RATE</span><strong>{selectedEvaluation?.rows ? `${(selectedEvaluation.defaults / selectedEvaluation.rows * 100).toFixed(1)}%` : "—"}</strong></div>
             </div>
             <div className="dataset-footnote" id="methodology">{metadata ? `${metadata.model_type} · Trained on 36-month loans issued ${metadata.training_period}; only Fully Paid, Charged Off, and Default outcomes are used. Open/late loans are excluded from supervised evaluation.` : dataset?.available ? `Quarterly evaluation cohorts: ${dataset.evaluation_cohorts.join(", ")}. Train the model to calculate matured-cohort metrics and prepare drift reference data.` : "Train on resolved loan cohorts and evaluate on later matured cohorts."}</div>
           </section>
 
           <section className="metrics-grid">
-            <MetricCard title={`${latestEvaluationCohort ?? "LATEST"} OUT-OF-TIME ROC AUC`} value={latestEvaluation?.metrics_available ? latestEvaluation.roc_auc.toFixed(3) : "—"} note={metadata ? "Later, matured loan cohort" : "Train the temporal model"} icon={<ShieldCheck size={17} />} trend={latestEvaluation?.metrics_available && latestEvaluation.roc_auc >= 0.7 ? "good" : "neutral"} />
-            <MetricCard title="LENDINGCLUB COHORT DRIFTED FEATURES" value={run ? `${drifted} / ${run.feature_count}` : "—"} note={run ? (drifted ? "Review quarterly cohort features" : "All cohort features stable") : "No cohort run yet"} icon={<SlidersHorizontal size={17} />} trend={drifted ? "bad" : "neutral"} />
-            <MetricCard title="LENDINGCLUB COHORT MAX PSI" value={run ? Math.max(0, ...Object.values(results).map((item) => item.psi)).toFixed(3) : "—"} note="Highest quarterly cohort PSI" icon={<Activity size={17} />} trend="neutral" />
-            <MetricCard title={`${latestEvaluationCohort ?? "LATEST"} MATURED LOANS`} value={latestEvaluation ? latestEvaluation.rows.toLocaleString() : "—"} note={latestEvaluation?.rows ? `${(latestEvaluation.defaults / latestEvaluation.rows * 100).toFixed(1)}% charged off/default` : "Train the temporal model"} icon={<Clock3 size={17} />} trend="neutral" />
+            <MetricCard title={`${selectedCohort || "SELECTED"} OUT-OF-TIME ROC AUC`} value={selectedEvaluation?.metrics_available ? selectedEvaluation.roc_auc.toFixed(3) : "—"} note={metadata ? "Selected matured loan cohort" : "Train the temporal model"} icon={<ShieldCheck size={17} />} trend={selectedEvaluation?.metrics_available && selectedEvaluation.roc_auc >= 0.7 ? "good" : "neutral"} />
+            <MetricCard title={`${selectedCohort || "SELECTED"} DEFAULT RATE`} value={selectedEvaluation?.rows ? `${(selectedEvaluation.defaults / selectedEvaluation.rows * 100).toFixed(1)}%` : "—"} note={selectedEvaluation?.rows ? "Charged off/default among resolved loans" : "Train the temporal model"} icon={<Activity size={17} />} trend="neutral" />
+            <MetricCard title="MONITORED COHORT DRIFTED FEATURES" value={run ? `${drifted} / ${run.feature_count}` : "—"} note={run ? `${monitoredCohort ?? "Unknown cohort"} · ${drifted ? "Review drifted features" : "All features stable"}` : "No cohort run yet"} icon={<SlidersHorizontal size={17} />} trend={drifted ? "bad" : "neutral"} />
+            <MetricCard title="MONITORED COHORT MAX PSI" value={run ? Math.max(0, ...Object.values(results).map((item) => item.psi)).toFixed(3) : "—"} note={monitoredCohort ? `Results for ${monitoredCohort}` : "Run a cohort drift check"} icon={<Activity size={17} />} trend="neutral" />
+            <MetricCard title={`${selectedCohort || "SELECTED"} MATURED LOANS`} value={selectedEvaluation ? selectedEvaluation.rows.toLocaleString() : "—"} note={selectedEvaluation?.rows ? "Resolved loans in selected cohort" : "Train the temporal model"} icon={<Clock3 size={17} />} trend="neutral" />
           </section>
 
           <section className="panel incoming-panel" aria-labelledby="incoming-title">
@@ -453,7 +463,7 @@ function App() {
             <div className="temporal-table-wrap"><table className="temporal-table"><thead><tr><th>ISSUE COHORT</th><th>RESOLVED LOANS</th><th>DEFAULT RATE</th><th>ROC AUC</th><th>AVG. PRECISION</th><th>BRIER SCORE</th></tr></thead><tbody>
               {dataset?.evaluation_cohorts.map((cohort) => {
                 const metrics = metadata.metrics_by_cohort[cohort];
-                return <tr key={cohort}><td><strong>{cohort}</strong></td><td>{metrics?.rows.toLocaleString() ?? "—"}</td><td>{metrics?.rows ? `${(metrics.defaults / metrics.rows * 100).toFixed(1)}%` : "—"}</td><td>{metrics?.metrics_available ? metrics.roc_auc.toFixed(3) : "—"}</td><td>{metrics?.metrics_available ? metrics.average_precision.toFixed(3) : "—"}</td><td>{metrics?.metrics_available ? metrics.brier_score.toFixed(3) : "—"}</td></tr>;
+                return <tr key={cohort} className={cohort === selectedCohort ? "selected-cohort-row" : undefined} aria-current={cohort === selectedCohort ? "true" : undefined}><td><strong>{cohort}</strong>{cohort === selectedCohort ? " · selected" : ""}</td><td>{metrics?.rows.toLocaleString() ?? "—"}</td><td>{metrics?.rows ? `${(metrics.defaults / metrics.rows * 100).toFixed(1)}%` : "—"}</td><td>{metrics?.metrics_available ? metrics.roc_auc.toFixed(3) : "—"}</td><td>{metrics?.metrics_available ? metrics.average_precision.toFixed(3) : "—"}</td><td>{metrics?.metrics_available ? metrics.brier_score.toFixed(3) : "—"}</td></tr>;
               })}
             </tbody></table></div>
             <div className="panel-footer"><span>Resolved loans only; unpaid/current/late loans are excluded from outcome metrics.</span><span>US LendingClub data; not current Indian MFI evidence.</span></div>
@@ -461,7 +471,7 @@ function App() {
 
           <section className="content-grid" id="features">
             <div className="panel feature-panel">
-              <div className="panel-heading"><div><h2>LendingClub quarterly feature drift</h2><p>Actual benchmark cohort compared with the training cohort</p></div><span className="button button-small"><span className="live-dot" /> Quarterly result</span></div>
+              <div className="panel-heading"><div><h2>LendingClub quarterly feature drift</h2><p>{monitoredCohort ? `Showing ${monitoredCohort} results; click Monitor cohort to run ${selectedCohort}.` : `Click Monitor cohort to run drift checks for ${selectedCohort}.`}</p></div><span className="button button-small"><span className="live-dot" />{monitoredCohort ? `Monitored ${monitoredCohort}` : "Not monitored"}</span></div>
               <div className="table-scroll"><table><thead><tr><th>FEATURE</th><th>DRIFT SCORE <span className="info-dot">i</span></th><th>TEST / STATISTIC</th><th>STATUS</th></tr></thead><tbody>
                 {Object.entries(results).length
                   ? Object.entries(results).map(([name, item]) => (
@@ -496,7 +506,7 @@ function App() {
                       </td>
                     </tr>
                   ))
-                  : <tr><td colSpan={4}><div className="empty-state"><div><Sparkles size={20} /></div><strong>Your feature results will show here</strong><span>Train the temporal model to compare matured annual cohorts.</span></div></td></tr>}
+                  : <tr><td colSpan={4}><div className="empty-state"><div><Sparkles size={20} /></div><strong>Your feature results will show here</strong><span>Click Monitor cohort to compare the selected quarter with the training cohort.</span></div></td></tr>}
               </tbody></table></div>
               <div className="panel-footer"><span>Showing {Object.keys(results).length} monitored features</span><button onClick={() => void refresh()}>View latest results <span>→</span></button></div>
             </div>
@@ -506,7 +516,7 @@ function App() {
               <div className="insight-body">{!run ? <div className="insight-empty"><Activity size={20} /><strong>Insights appear after a run</strong><span>Compare matured quarterly loan cohorts.</span></div> : drifted === 0 ? <div className="insight-message insight-success"><div className="insight-symbol"><Check size={16} /></div><div><strong>No significant drift detected</strong><p>All {run.feature_count} monitored features are below the PSI threshold. {runContext}</p></div></div> : <div className="insight-message insight-warning"><div className="insight-symbol"><TriangleAlert size={16} /></div><div><strong>{drifted} feature{drifted > 1 ? "s" : ""} need review</strong><p>{Object.entries(results).filter(([, v]) => v.drift_detected).map(([k]) => names[k] ?? k).join(", ")} differ across the compared cohorts. {runContext}</p></div></div>}
                 <div className="threshold-card"><span>PSI THRESHOLDS</span><div><i className="threshold-green" /> No drift <strong>&lt; 0.10</strong></div><div><i className="threshold-yellow" /> Moderate <strong>0.10–0.20</strong></div><div><i className="threshold-red" /> Severe <strong>&gt; 0.20</strong></div><small>Categorical features also require a significant chi-square test (p&lt;0.05).</small></div>
               </div>
-              <button className="insight-link" onClick={() => { setSelectedCohort("2014-Q1"); void runDatasetDrift("2014-Q1"); }} disabled={busy || !model?.trained}>Compare 2014-Q1 <span>→</span></button>
+              <button className="insight-link" onClick={() => void runDatasetDrift(selectedCohort)} disabled={busy || !model?.trained}>Monitor {selectedCohort} <span>→</span></button>
             </aside>
           </section>
 
